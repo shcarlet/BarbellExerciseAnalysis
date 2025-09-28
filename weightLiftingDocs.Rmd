@@ -1,0 +1,79 @@
+---
+title: "Predicting Barbell Exercise Performance Using Accelerometer Data"
+author: "Srujana C Bhandary"
+date: "2025-09-28"
+output: html_document
+---
+
+## 1. Introduction
+
+This project uses accelerometer data collected from the belt, forearm, arm, and dumbbell of 6 participants performing barbell exercises. The goal is to predict **how well participants performed the exercise**, classified into 5 categories: A, B, C, D, and E.
+
+The target variable is `classe`. The dataset contains measurements of roll, pitch, yaw, acceleration, and gyroscopic values from multiple body locations.
+
+---
+
+## 2. Load Required Libraries
+
+```{r load-libraries}
+library(caret)
+library(randomForest)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+
+# Load training and testing data
+training <- read.csv("pml-training.csv", na.strings = c("NA", "", "#DIV/0!"))
+testing <- read.csv("pml-testing.csv", na.strings = c("NA", "", "#DIV/0!"))
+
+# Remove near-zero variance predictors
+nzv <- nearZeroVar(training)
+training <- training[, -nzv]
+
+# Remove non-predictive columns
+cols_to_remove <- c("user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "X")
+cols_to_remove <- cols_to_remove[cols_to_remove %in% names(training)]
+training <- training[, !(names(training) %in% cols_to_remove)]
+
+# Remove columns with >50% missing
+na_frac <- sapply(training, function(x) mean(is.na(x)))
+training <- training[, na_frac < 0.5]
+
+# Ensure target variable is factor
+training$classe <- as.factor(training$classe)
+
+set.seed(123)
+inTrain <- createDataPartition(training$classe, p = 0.7, list = FALSE)
+trainSet <- training[inTrain, ]
+validSet <- training[-inTrain, ]
+
+set.seed(123)
+rf_model <- randomForest(classe ~ ., data = trainSet, ntree = 100)
+rf_model
+
+varImpPlot(rf_model, main="Variable Importance in Random Forest Model")
+
+pred_valid <- predict(rf_model, validSet)
+conf_mat <- confusionMatrix(pred_valid, validSet$classe)
+conf_mat
+
+cm <- conf_mat$table
+cm_melt <- melt(cm)
+ggplot(cm_melt, aes(Prediction, Reference, fill=value)) +
+  geom_tile() +
+  geom_text(aes(label=value), color="white") +
+  scale_fill_gradient(low="blue", high="red") +
+  theme_minimal() +
+  ggtitle("Confusion Matrix Heatmap")
+
+# Keep only columns present in training
+testing <- testing[, names(testing) %in% names(training)]
+testing$classe <- NULL # Test set has no labels
+
+# Predict
+pred_test <- predict(rf_model, testing)
+pred_test
+
+# Save predictions to CSV for submission
+write.csv(pred_test, "predictions.csv", row.names = FALSE)
+
